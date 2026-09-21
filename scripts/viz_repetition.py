@@ -11,7 +11,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from visualization.cache import JsonlCache
-from visualization.config import load_config
+from visualization.config import load_config, runtime_value
 from visualization.embedding import QwenStepEmbedder
 from visualization.metrics.repetition import max_previous_bleu, max_previous_semantic
 from visualization.provenance import save_run_config
@@ -45,7 +45,9 @@ def main() -> None:
     args = parse_args()
     logging.basicConfig(level=logging.DEBUG if args.debug else logging.INFO)
     config = load_config(args.config)
-    output_root = Path(choose(args.output_dir, config["output_dir"]))
+    output_root = Path(
+        runtime_value(args.output_dir, "CORED_OUTPUT_DIR", config["output_dir"])
+    )
     run_name = config["run_name"]
     results_dir = output_root / "results" / run_name
     weights_path = Path(choose(args.weights, results_dir / "weights.jsonl"))
@@ -62,7 +64,9 @@ def main() -> None:
         resume=args.resume,
     )
     exclusions = ExclusionReport()
-    embedding_model = choose(args.embedding_model, config["embedding"]["name"])
+    embedding_model = runtime_value(
+        args.embedding_model, "CORED_EMBEDDING_MODEL", config["embedding"]["name"]
+    )
     for record in cache.values():
         if record.get("embedding_model") != embedding_model:
             raise ValueError(

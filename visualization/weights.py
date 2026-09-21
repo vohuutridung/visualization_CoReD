@@ -37,8 +37,6 @@ class WeightParameters:
             raise ValueError("weight parameters must be finite")
         if self.lambda_u < 0 or self.lambda_d < 0:
             raise ValueError("lambda_u and lambda_d must be non-negative")
-        if self.lambda_u + self.lambda_d > 1 + 1e-12:
-            raise ValueError("lambda_u + lambda_d must be <= 1")
         if self.weight_floor <= 0 or self.epsilon <= 0:
             raise ValueError("weight_floor and epsilon must be positive")
 

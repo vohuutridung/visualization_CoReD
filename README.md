@@ -19,12 +19,14 @@ The implementation is measurement-only. It never trains or updates the base mode
 
 ## Important Phase-2 configuration requirement
 
-The target repository was initially empty, so there was no Phase-2 implementation to import. The local paper source supplies the exact signal and weight equations, but its `lambda_U` and `lambda_D` values are still marked TODO. This project therefore refuses to guess them.
+The target repository was initially empty, so there was no Phase-2 implementation to import. The local paper source supplies the signal and weight equations. The actual experiment uses `lambda_U = 1` and `lambda_D = 1`; both backbone configs now record those values.
 
-Final runs must provide:
+This differs from the paper draft's stated constraint `lambda_U + lambda_D <= 1`. The pipeline follows the actual Phase-2 run and records the discrepancy instead of enforcing the draft constraint. With `(1, 1)`, the pre-floor theoretical interval is `(-1, 3)`, not `(0, 2)`; the configured `w_min = 0.05` still enforces positive final weights.
+
+Final runs must still provide:
 
 1. the actual Phase-1 expert checkpoint directory;
-2. the exact `lambda_U` and `lambda_D` used by Phase 2; and
+2. the original base-model path or an accessible Hugging Face model ID; and
 3. the Phase-2 **training-corpus** standardization moments:
 
 ```json
@@ -59,6 +61,50 @@ COUNCIL_DIR/
 
 Use `--expert-pattern` if the actual Phase-1 convention differs.
 
+### Server-local paths
+
+Every machine-specific path can be supplied in three ways, with precedence **CLI > environment > YAML config**.
+
+```bash
+export CORED_BACKBONE=/models/Qwen3-8B
+export CORED_EMBEDDING_MODEL=/models/Qwen3-Embedding-0.6B
+export CORED_COUNCIL_DIR=/checkpoints/cored/qwen3/phase1
+export CORED_STANDARDIZATION_PATH=/checkpoints/cored/qwen3/phase2_standardization.json
+export CORED_OUTPUT_DIR=/results/cored_visualization
+```
+
+If the expert directories do not share `expert_{index}` names, either repeat `--expert-path` or export a colon-separated list on Linux:
+
+```bash
+export CORED_EXPERT_PATHS=/ckpt/expert_alpha:/ckpt/expert_beta:/ckpt/expert_gamma
+```
+
+Optional environment overrides are also available for `CORED_EXPERT_PATTERN`,
+`CORED_NUM_EXPERTS`, `CORED_DATASET`, `CORED_DATASET_SPLIT`, `CORED_SEED`,
+`CORED_LAMBDA_U`, and `CORED_LAMBDA_D`.
+
+The equivalent YAML form is:
+
+```yaml
+backbone:
+  name: /models/Qwen3-8B
+embedding:
+  name: /models/Qwen3-Embedding-0.6B
+council:
+  num_experts: 3
+  expert_paths:
+    - /ckpt/expert_alpha
+    - /ckpt/expert_beta
+    - /ckpt/expert_gamma
+weights:
+  lambda_u: 1.0
+  lambda_d: 1.0
+  standardization_path: /ckpt/phase2_standardization.json
+output_dir: /results/cored_visualization
+```
+
+The Phase-2 student path is intentionally not an input: Answer Gain and Removal must use the untouched original base model, while weight extraction and branching use the Phase-1 experts. Loading the Phase-2 student would make those analyses circular. It therefore does not need to be copied to, mounted on, or configured for the analysis server.
+
 Token-to-step assignment uses the fast tokenizer's character offsets: a predicted token belongs to a step when its rendered span overlaps that stripped raw step. The `"\n\n"` separator itself is not assigned to either step. Standard deviations use population moments, matching a corpus-wide running mean/variance. Both conventions are saved in run provenance; if the original Phase-2 implementation used different boundary ownership, update this adapter rather than silently mixing definitions.
 
 ## Installation
@@ -88,8 +134,6 @@ TRAINING_STATS=/path/to/qwen3_phase2_standardization.json
 python scripts/viz_extract_weights.py \
   --config "$CONFIG" \
   --council-checkpoint-dir "$COUNCIL_DIR" \
-  --lambda-u ACTUAL_LAMBDA_U \
-  --lambda-d ACTUAL_LAMBDA_D \
   --standardization-path "$TRAINING_STATS" \
   --resume
 ```
@@ -168,7 +212,7 @@ For a validated full run, the sequence can be launched with:
 
 ```bash
 bash scripts/viz_run_all.sh \
-  "$CONFIG" "$COUNCIL_DIR" ACTUAL_LAMBDA_U ACTUAL_LAMBDA_D "$TRAINING_STATS"
+  "$CONFIG"
 ```
 
 ## Outputs

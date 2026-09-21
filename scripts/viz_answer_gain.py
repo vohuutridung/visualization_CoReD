@@ -8,7 +8,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from visualization.config import load_config
+from visualization.config import load_config, runtime_value
 from visualization.data import load_subset
 from visualization.generation import DecodingConfig, VLLMGenerator
 from visualization.provenance import save_run_config
@@ -45,7 +45,9 @@ def main() -> None:
     args = parse_args()
     logging.basicConfig(level=logging.DEBUG if args.debug else logging.INFO)
     config = load_config(args.config)
-    output_root = Path(choose(args.output_dir, config["output_dir"]))
+    output_root = Path(
+        runtime_value(args.output_dir, "CORED_OUTPUT_DIR", config["output_dir"])
+    )
     run_name = config["run_name"]
     results_dir = output_root / "results" / run_name
     weights_path = Path(choose(args.weights, results_dir / "weights.jsonl"))
@@ -67,7 +69,7 @@ def main() -> None:
 
     from transformers import AutoTokenizer
 
-    backbone = choose(args.backbone, config["backbone"]["name"])
+    backbone = runtime_value(args.backbone, "CORED_BACKBONE", config["backbone"]["name"])
     tokenizer = AutoTokenizer.from_pretrained(
         backbone,
         revision=config["backbone"].get("revision"),
@@ -96,7 +98,7 @@ def main() -> None:
         ),
     )
     num_rollouts = choose(args.num_rollouts, config["decoding"]["num_rollouts"])
-    seed = choose(args.seed, config["seed"])
+    seed = int(runtime_value(args.seed, "CORED_SEED", config["seed"]))
     summary = run_answer_gain(
         samples,
         tokenizer=tokenizer,

@@ -18,13 +18,14 @@ embedding:
 council:
   num_experts: 3
   checkpoint_dir: null
+  expert_paths: null
   expert_pattern: expert_{index}
   enable_thinking: null
   teacher_forcing_content_template: "{think_content}"
   max_lora_rank: 64
 weights:
-  lambda_u: null
-  lambda_d: null
+  lambda_u: 1.0
+  lambda_d: 1.0
   weight_floor: 0.05
   epsilon: 0.001
   standardization_path: null

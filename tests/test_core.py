@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest import mock
 
 from visualization.cache import JsonlCache
+from visualization.config import resolve_expert_paths, runtime_value
 from visualization.data import TrajectoryParseError, deterministic_subset, parse_longcot
 from visualization.metrics.answer_gain import answer_gains
 from visualization.metrics.branching import expert_pair_count, semantic_branching
@@ -72,6 +73,69 @@ class WeightTests(unittest.TestCase):
         weight, u_hat, rho_hat = compute_weight(3.0, 6.0, stats, parameters)
         self.assertEqual((u_hat, rho_hat), (1.0, 1.0))
         self.assertAlmostEqual(weight, 1 + 0.7 * math.tanh(1.0))
+
+    def test_actual_phase2_lambda_pair_is_accepted(self) -> None:
+        parameters = WeightParameters(1.0, 1.0, weight_floor=0.05)
+        stats = StandardizationStats(0.0, 1.0, 0.0, 1.0, "test")
+        weight, _, _ = compute_weight(-100.0, -100.0, stats, parameters)
+        self.assertEqual(weight, 0.05)
+
+
+class RuntimeConfigTests(unittest.TestCase):
+    def test_runtime_precedence_is_cli_then_environment_then_config(self) -> None:
+        with mock.patch.dict("os.environ", {"CORED_TEST_PATH": "/from/env"}):
+            self.assertEqual(
+                runtime_value("/from/cli", "CORED_TEST_PATH", "/from/config"),
+                "/from/cli",
+            )
+            self.assertEqual(
+                runtime_value(None, "CORED_TEST_PATH", "/from/config"),
+                "/from/env",
+            )
+        with mock.patch.dict("os.environ", {}, clear=True):
+            self.assertEqual(
+                runtime_value(None, "CORED_TEST_PATH", "/from/config"),
+                "/from/config",
+            )
+
+    def test_explicit_expert_paths_from_environment(self) -> None:
+        value = "/experts/alpha:/experts/beta:/experts/gamma"
+        with mock.patch.dict("os.environ", {"CORED_EXPERT_PATHS": value}, clear=True):
+            paths = resolve_expert_paths(
+                cli_paths=None,
+                cli_checkpoint_dir=None,
+                cli_pattern=None,
+                council_config={"expert_pattern": "expert_{index}"},
+                num_experts=3,
+            )
+        self.assertEqual(
+            paths,
+            [Path("/experts/alpha"), Path("/experts/beta"), Path("/experts/gamma")],
+        )
+
+    def test_expert_paths_from_directory_and_pattern(self) -> None:
+        with mock.patch.dict("os.environ", {}, clear=True):
+            paths = resolve_expert_paths(
+                cli_paths=None,
+                cli_checkpoint_dir=None,
+                cli_pattern=None,
+                council_config={
+                    "checkpoint_dir": "/council",
+                    "expert_pattern": "adapter-{index}",
+                },
+                num_experts=2,
+            )
+        self.assertEqual(paths, [Path("/council/adapter-0"), Path("/council/adapter-1")])
+
+    def test_expert_count_mismatch_is_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "expected 3 expert paths"):
+            resolve_expert_paths(
+                cli_paths=["/one", "/two"],
+                cli_checkpoint_dir=None,
+                cli_pattern=None,
+                council_config={},
+                num_experts=3,
+            )
 
 
 class MetricTests(unittest.TestCase):

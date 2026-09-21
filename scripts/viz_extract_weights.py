@@ -11,7 +11,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from visualization.cache import JsonlCache
-from visualization.config import load_config
+from visualization.config import load_config, resolve_expert_paths, runtime_value
 from visualization.data import (
     TrajectoryParseError,
     deterministic_subset,
@@ -43,6 +43,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--split")
     parser.add_argument("--backbone")
     parser.add_argument("--council-checkpoint-dir")
+    parser.add_argument(
+        "--expert-path",
+        action="append",
+        dest="expert_paths",
+        help="Exact Phase-1 PEFT adapter path; repeat once per expert",
+    )
     parser.add_argument("--num-experts", type=int)
     parser.add_argument("--expert-pattern")
     parser.add_argument("--output-dir")
@@ -85,37 +91,43 @@ def main() -> None:
     args = parse_args()
     logging.basicConfig(level=logging.DEBUG if args.debug else logging.INFO)
     config = load_config(args.config)
-    dataset_name = choose(args.dataset, config["dataset"]["name"])
-    split = choose(args.split, config["dataset"]["split"])
-    backbone = choose(args.backbone, config["backbone"]["name"])
-    checkpoint_dir = choose(args.council_checkpoint_dir, config["council"].get("checkpoint_dir"))
-    if checkpoint_dir is None:
-        raise ValueError("--council-checkpoint-dir is required; checkpoint paths are never guessed")
-    num_experts = choose(args.num_experts, config["council"]["num_experts"])
-    pattern = choose(args.expert_pattern, config["council"]["expert_pattern"])
-    output_root = Path(choose(args.output_dir, config["output_dir"]))
-    seed = choose(args.seed, config["seed"])
+    dataset_name = runtime_value(args.dataset, "CORED_DATASET", config["dataset"]["name"])
+    split = runtime_value(args.split, "CORED_DATASET_SPLIT", config["dataset"]["split"])
+    backbone = runtime_value(args.backbone, "CORED_BACKBONE", config["backbone"]["name"])
+    num_experts = int(
+        runtime_value(args.num_experts, "CORED_NUM_EXPERTS", config["council"]["num_experts"])
+    )
+    output_root = Path(
+        runtime_value(args.output_dir, "CORED_OUTPUT_DIR", config["output_dir"])
+    )
+    seed = int(runtime_value(args.seed, "CORED_SEED", config["seed"]))
     run_name = config["run_name"]
     results_dir = output_root / "results" / run_name
     reports_dir = output_root / "reports"
     subsets_dir = output_root / "subsets"
     results_dir.mkdir(parents=True, exist_ok=True)
 
-    lambda_u = choose(args.lambda_u, config["weights"].get("lambda_u"))
-    lambda_d = choose(args.lambda_d, config["weights"].get("lambda_d"))
+    lambda_u = runtime_value(args.lambda_u, "CORED_LAMBDA_U", config["weights"].get("lambda_u"))
+    lambda_d = runtime_value(args.lambda_d, "CORED_LAMBDA_D", config["weights"].get("lambda_d"))
     if lambda_u is None or lambda_d is None:
         raise ValueError(
-            "Phase-2 lambda_u/lambda_d are unset in the paper and config; provide their actual "
-            "training values with --lambda-u and --lambda-d"
+            "Phase-2 lambda_u/lambda_d are required; provide them in YAML, through "
+            "CORED_LAMBDA_U/CORED_LAMBDA_D, or with --lambda-u/--lambda-d"
         )
     parameters = WeightParameters(
-        lambda_u=lambda_u,
-        lambda_d=lambda_d,
+        lambda_u=float(lambda_u),
+        lambda_d=float(lambda_d),
         weight_floor=choose(args.weight_floor, config["weights"]["weight_floor"]),
         epsilon=choose(args.epsilon, config["weights"]["epsilon"]),
     )
 
-    adapter_paths = [Path(checkpoint_dir) / pattern.format(index=index) for index in range(num_experts)]
+    adapter_paths = resolve_expert_paths(
+        cli_paths=args.expert_paths,
+        cli_checkpoint_dir=args.council_checkpoint_dir,
+        cli_pattern=args.expert_pattern,
+        council_config=config["council"],
+        num_experts=num_experts,
+    )
     missing = [str(path) for path in adapter_paths if not path.exists()]
     if missing:
         raise FileNotFoundError(f"Phase-1 expert checkpoints not found: {missing}")
@@ -240,7 +252,11 @@ def main() -> None:
             )
             continue
         raw_records.extend(records)
-    stats_path = choose(args.standardization_path, config["weights"].get("standardization_path"))
+    stats_path = runtime_value(
+        args.standardization_path,
+        "CORED_STANDARDIZATION_PATH",
+        config["weights"].get("standardization_path"),
+    )
     if stats_path:
         stats = load_stats(stats_path)
     elif args.fit_standardization_on_analysis:
@@ -323,6 +339,7 @@ def main() -> None:
                 ],
             },
             "weight_parameters": parameters.__dict__,
+            "draft_lambda_sum_constraint_applied": False,
             "standardization": stats.__dict__,
             "parsed_samples": parsed_count,
             "valid_sample_uuids": valid_uuids,

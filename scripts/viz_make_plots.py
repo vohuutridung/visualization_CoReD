@@ -9,7 +9,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from visualization.config import load_config
+from visualization.config import load_config, runtime_value
 from visualization.io import atomic_write_json, read_jsonl
 from visualization.plotting import make_figures
 from visualization.statistics import pooled_group_summary
@@ -72,7 +72,9 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     config = load_config(args.config)
-    output_root = Path(args.output_dir or config["output_dir"])
+    output_root = Path(
+        runtime_value(args.output_dir, "CORED_OUTPUT_DIR", config["output_dir"])
+    )
     run_name = config["run_name"]
     results_dir = output_root / "results" / run_name
     tables_dir = output_root / "tables" / run_name

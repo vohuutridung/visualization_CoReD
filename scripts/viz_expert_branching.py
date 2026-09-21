@@ -13,7 +13,7 @@ from types import SimpleNamespace
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from visualization.cache import CacheProvenanceError, JsonlCache
-from visualization.config import load_config
+from visualization.config import load_config, resolve_expert_paths, runtime_value
 from visualization.data import load_subset
 from visualization.embedding import QwenStepEmbedder
 from visualization.generation import DecodingConfig, GenerationRequest, VLLMGenerator, rollout_seed
@@ -39,6 +39,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--subset")
     parser.add_argument("--backbone")
     parser.add_argument("--council-checkpoint-dir")
+    parser.add_argument(
+        "--expert-path",
+        action="append",
+        dest="expert_paths",
+        help="Exact Phase-1 PEFT adapter path; repeat once per expert",
+    )
     parser.add_argument("--num-experts", type=int)
     parser.add_argument("--expert-pattern")
     parser.add_argument("--embedding-model")
@@ -64,7 +70,9 @@ def main() -> None:
     args = parse_args()
     logging.basicConfig(level=logging.DEBUG if args.debug else logging.INFO)
     config = load_config(args.config)
-    output_root = Path(choose(args.output_dir, config["output_dir"]))
+    output_root = Path(
+        runtime_value(args.output_dir, "CORED_OUTPUT_DIR", config["output_dir"])
+    )
     run_name = config["run_name"]
     results_dir = output_root / "results" / run_name
     samples_by_uuid = load_weighted_samples(
@@ -87,21 +95,25 @@ def main() -> None:
         else:
             samples.append(sample)
 
-    checkpoint_dir = choose(args.council_checkpoint_dir, config["council"].get("checkpoint_dir"))
-    if checkpoint_dir is None:
-        raise ValueError("--council-checkpoint-dir is required")
-    num_experts = choose(args.num_experts, config["council"]["num_experts"])
+    num_experts = int(
+        runtime_value(args.num_experts, "CORED_NUM_EXPERTS", config["council"]["num_experts"])
+    )
     if num_experts < 2:
         raise ValueError("expert branching requires at least two Phase-1 experts")
-    pattern = choose(args.expert_pattern, config["council"]["expert_pattern"])
-    adapter_paths = [Path(checkpoint_dir) / pattern.format(index=index) for index in range(num_experts)]
+    adapter_paths = resolve_expert_paths(
+        cli_paths=args.expert_paths,
+        cli_checkpoint_dir=args.council_checkpoint_dir,
+        cli_pattern=args.expert_pattern,
+        council_config=config["council"],
+        num_experts=num_experts,
+    )
     missing = [str(path) for path in adapter_paths if not path.exists()]
     if missing:
         raise FileNotFoundError(f"Phase-1 expert checkpoints not found: {missing}")
 
     from transformers import AutoTokenizer
 
-    backbone = choose(args.backbone, config["backbone"]["name"])
+    backbone = runtime_value(args.backbone, "CORED_BACKBONE", config["backbone"]["name"])
     tokenizer = AutoTokenizer.from_pretrained(
         backbone,
         revision=config["backbone"].get("revision"),
@@ -120,8 +132,11 @@ def main() -> None:
         max_lora_rank=config["council"]["max_lora_rank"],
         dtype=config["backbone"].get("dtype", "bfloat16"),
     )
+    embedding_model = runtime_value(
+        args.embedding_model, "CORED_EMBEDDING_MODEL", config["embedding"]["name"]
+    )
     embedder = QwenStepEmbedder(
-        choose(args.embedding_model, config["embedding"]["name"]),
+        embedding_model,
         revision=config["embedding"].get("revision"),
         dtype=config["backbone"].get("dtype", "bfloat16"),
         max_length=config["embedding"]["max_length"],
@@ -153,7 +168,6 @@ def main() -> None:
         key=lambda record: (str(record["uuid"]), int(record["step_index"])),
         resume=args.resume,
     )
-    embedding_model = choose(args.embedding_model, config["embedding"]["name"])
     for record in metric_cache.values():
         if record.get("embedding_model") != embedding_model:
             raise ValueError(
@@ -168,7 +182,7 @@ def main() -> None:
         if args.save_prompts or args.debug
         else None
     )
-    seed = choose(args.seed, config["seed"])
+    seed = int(runtime_value(args.seed, "CORED_SEED", config["seed"]))
     started = time.monotonic()
     generated_now = 0
     tokens_now = 0
