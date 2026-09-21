@@ -1,0 +1,46 @@
+run_name: qwen3_8b
+dataset:
+  name: vohuutridung/data_ablation_phase1_loss
+  split: train
+  revision: null
+backbone:
+  name: Qwen/Qwen3-8B
+  revision: null
+  is_qwen3: true
+  enable_thinking: false
+  dtype: bfloat16
+  max_model_len: 65536
+  tensor_parallel_size: 1
+embedding:
+  name: Qwen/Qwen3-Embedding-0.6B
+  revision: null
+  max_length: 32768
+council:
+  num_experts: 3
+  checkpoint_dir: null
+  expert_pattern: expert_{index}
+  enable_thinking: null
+  teacher_forcing_content_template: "{think_content}"
+  max_lora_rank: 64
+weights:
+  lambda_u: null
+  lambda_d: null
+  weight_floor: 0.05
+  epsilon: 0.001
+  standardization_path: null
+  logit_chunk_size: 64
+decoding:
+  num_rollouts: 16
+  temperature: 0.6
+  top_p: 0.9
+  top_k: -1
+  min_p: 0.0
+  repetition_penalty: 1.05
+  answer_gain_max_new_tokens: 32768
+  removal_max_new_tokens: 512
+  branching_max_new_tokens: 256
+subsets:
+  answer_gain: 500
+  expert_branching: 1000
+seed: 42
+output_dir: artifacts

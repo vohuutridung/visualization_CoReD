@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "visualization-cored"
+version = "0.1.0"
+description = "Reproducible functional analysis pipeline for Council-Weighted Reasoning Distillation"
+requires-python = ">=3.10"
+dependencies = [
+  "datasets>=3.0",
+  "matplotlib>=3.8",
+  "math-verify>=0.7",
+  "nltk>=3.9",
+  "numpy>=1.26",
+  "pandas>=2.2",
+  "peft>=0.14",
+  "pyarrow>=17",
+  "PyYAML>=6.0",
+  "seaborn>=0.13",
+  "torch>=2.4",
+  "transformers>=4.51.0",
+  "tqdm>=4.66",
+  "vllm>=0.8.5",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8.3"]
+
+[tool.setuptools.packages.find]
+include = ["visualization*"]
+
+[tool.setuptools.package-data]
+visualization = ["config/*.yaml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

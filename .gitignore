@@ -203,6 +203,13 @@ cython_debug/
 # Temporary file for partial code execution
 tempCodeRunnerFile.py
 
+# CoReD analysis outputs and local model/checkpoint state
+artifacts/
+checkpoints/
+*.safetensors
+*.pt
+*.pth
+
 # Ruff stuff:
 .ruff_cache/
 
